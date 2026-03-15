@@ -14,13 +14,15 @@ allowed-tools:
 
 # p5.brush — AI Generative Art Skill
 
-You generate standalone HTML files that produce generative art using **p5.js** and **p5.brush v2.0.0**.
+You generate standalone HTML files that produce generative art using **p5.js 2.x** and **p5.brush v2**.
+
+**Library by [@acamposuribe](https://github.com/acamposuribe/p5.brush)**. Design custom brushes visually with the [Brush Maker](https://acamposuribe.github.io/p5.brush/tools/brush-maker.html).
 
 ## Workflow
 
 1. User describes what they want (e.g. "a field of wildflowers in charcoal", "abstract watercolor circles")
 2. You write a complete HTML file with an embedded p5.js sketch using the p5.brush API
-3. Save to `~/Documents/WORKSPACE/PERSONAL/Projects/p5-brush/output/<descriptive-name>.html`
+3. Save to a sensible location (e.g. `./output/<descriptive-name>.html` in the current project, or wherever the user specifies)
 4. Open in browser: `open <path>`
 
 ## Output Template
@@ -33,8 +35,8 @@ Every generated file follows this structure:
 <head>
   <meta charset="utf-8">
   <title>p5.brush — [title]</title>
-  <script src="../lib/p5.min.js"></script>
-  <script src="../lib/p5.brush.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@2/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.brush@2.0.0-beta"></script>
   <style>
     html, body { margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; }
     canvas { display: block; }
@@ -44,8 +46,8 @@ Every generated file follows this structure:
 <script>
 function setup() {
   createCanvas(800, 800, WEBGL);
-  brush.load();
-  // IMPORTANT: WEBGL origin is center. Shift to top-left:
+  // p5.brush auto-initializes on createCanvas — no brush.load() needed
+  // Shift WEBGL origin to top-left:
   translate(-width / 2, -height / 2);
 
   // Set background
@@ -64,24 +66,27 @@ function setup() {
 ## CRITICAL RULES
 
 1. **Always use `WEBGL` mode**: `createCanvas(w, h, WEBGL)` — p5.brush v2 requires it
-2. **Always call `brush.load()`** in setup, before any brush operations
+2. **`brush.load()` is automatic** — the library initializes when `createCanvas()` is called. Only call `brush.load(buffer)` when targeting a `p5.Graphics` or `p5.Framebuffer`
 3. **Shift origin**: `translate(-width/2, -height/2)` right after background to work in top-left coordinates
-4. **Angles are anticlockwise** from the x-axis (radians for p5 functions, degrees for brush fields)
-5. **`brush.circle()` and `brush.arc()` are stroke-only** — they do NOT fill. Use `brush.polygon()` or `brush.beginShape()` for filled circular shapes
-6. **Use `randomSeed()`** for reproducible outputs — p5.brush syncs automatically
+4. **Angles follow `angleMode()`** — radians by default (matching p5). `brush.addField()` angles default to degrees unless you pass `{ angleMode: "radians" }`
+5. **`brush.arc()` is stroke-only** — it does NOT fill. `brush.circle()` and `brush.rect()` support stroke + fill + hatch
+6. **Use `randomSeed()`** for reproducible outputs — p5.brush syncs automatically (both `randomSeed()` and `noiseSeed()`)
 7. **Static sketches only need `setup()`** — no `draw()` loop needed. Use `draw()` only for animations with `brush.refreshField(frameCount/10)`
 8. **All drawing in one frame** — put everything in `setup()` for static art
-9. **Text labels: use HTML overlay, NOT p5 `text()`** — WEBGL mode requires TTF/OTF fonts loaded via `loadFont()` which is fragile with CDN fonts. For diagrams or any labeled artwork, use absolutely positioned HTML `<div>` elements over the canvas instead. Wrap canvas in a `<div id="container">` with `position: relative`, parent the canvas to it with `cnv.parent('container')`, and position labels with CSS.
-10. **CDN path for p5.brush**: use `../lib/p5.brush.js` — the shorthand `p5.brush@2` does NOT resolve on npm/jsdelivr since v2 is an alpha tag.
+9. **Text labels: use HTML overlay, NOT p5 `text()`** — WEBGL mode requires TTF/OTF fonts loaded via `loadFont()` which is fragile with CDN fonts. For labeled artwork, use absolutely positioned HTML `<div>` elements over the canvas instead
+10. **Image brushes require `await`** — `brush.add()` returns a Promise for `type: "image"`. You must `await` it and declare `async function setup()`
+11. **Fill budget** — watercolor fills are expensive. Keep filled shape count reasonable (under ~50 for complex fills with high bleed) or the sketch will lag
 
 ## API REFERENCE
 
 ### Setup & Config
 
 ```js
-brush.load()              // Initialize. Call in setup() after createCanvas(w,h,WEBGL)
-brush.load(buffer)        // Target a p5.Graphics buffer instead
-brush.scaleBrushes(scale) // Scale all default brush params (weight, vibration, spacing)
+// brush.load() is called automatically — only needed for buffer targets:
+brush.load(buffer)        // Target a p5.Graphics or p5.Framebuffer
+brush.load()              // Switch back to main canvas
+brush.scaleBrushes(scale) // Scale all default brush params (weight, scatter, spacing)
+brush.instance(p)         // For p5 instance mode — call before setup/draw
 ```
 
 ### Vector Fields
@@ -103,7 +108,7 @@ brush.addField("myField", function(t, field) {
     for (let row = 0; row < field[0].length; row++)
       field[col][row] = 45 + noise(col * 0.1, row * 0.1) * 180;
   return field;
-});
+}, { angleMode: "degrees" }); // default is degrees
 brush.field("myField");
 ```
 
@@ -130,40 +135,50 @@ brush.pick("2B")           // Select brush without changing color/weight
 | `marker2` | marker | Marker variant |
 | `hatch_brush` | hatch | Clean lines for hatching |
 
-Custom brush:
+**Custom brush types:**
+
 ```js
+// Standard custom brush
 brush.add("myBrush", {
   type: "default",     // "default", "spray", "marker", "custom", "image"
-  weight: 0.5,         // thickness
-  scatter: 0.8,        // sideways wobble
-  sharpness: 0.5,      // 0-1, edge softness (default type)
-  grain: 10,           // texture density (default type)
+  weight: 0.5,         // thickness (canvas units)
+  scatter: 0.8,        // sideways wobble (canvas units)
+  sharpness: 0.5,      // 0-1, edge softness (default type only)
+  grain: 10,           // texture density (default type only)
   opacity: 150,        // 0-255
   spacing: 0.1,        // gap between stamps (1 = no overlap)
-  blend: true,         // paint mixing
   pressure: [1, 0.5],  // [start,end] or [start,mid,end] or (t)=>value
   rotate: "natural",   // "none", "natural", "random"
 });
-```
 
-Custom tip brush:
-```js
+// Custom tip brush — draw your own tip shape
 brush.add("diamond", {
   type: "custom",
   weight: 5,
   opacity: 23,
   spacing: 0.6,
-  blend: true,
   pressure: [0.5, 1.5, 0.5],
   tip: (_m) => { _m.rotate(45); _m.rect(-1.5, -1.5, 3, 3); },
   rotate: "natural",
+});
+
+// Image brush — MUST use await + async setup()
+await brush.add("watercolor", {
+  type: "image",
+  weight: 10,
+  scatter: 2,
+  opacity: 30,
+  spacing: 1.5,
+  pressure: [1, 0.5],
+  image: { src: "./brush_tips/brush.jpg" },
+  rotate: "random",
 });
 ```
 
 ### Stroke
 
 ```js
-brush.set("2B", "#333", 1)     // Set brush, color, weight multiplier — activates stroke
+brush.set("2B", "#333", 1)     // Set brush, color, weight — activates stroke
 brush.stroke("#ff0000")         // Set color, activate stroke
 brush.strokeWeight(2)           // Weight multiplier
 brush.noStroke()                // Disable stroke
@@ -173,6 +188,7 @@ brush.noStroke()                // Disable stroke
 
 ```js
 brush.fill("#4a90d9", 150)           // Color + opacity (0-255), activate fill
+brush.fill(244, 15, 24, 75)          // RGB + opacity
 brush.fillBleed(0.5, "out")          // Edge bleed: strength 0-1, direction "out"/"in"
 brush.fillTexture(0.5, 0.3)          // Texture: strength 0-1, border intensity 0-1
 brush.noFill()                       // Disable fill
@@ -182,25 +198,32 @@ brush.noFill()                       // Disable fill
 
 ```js
 brush.hatch(8, 45, { rand: 0.2, continuous: false, gradient: false })
-// dist: line spacing, angle: degrees, options: { rand, continuous, gradient }
+// dist: line spacing, angle: follows angleMode(), options: { rand, continuous, gradient }
 brush.hatchStyle("rotring", "#555", 0.5)  // Brush for hatch lines
 brush.noHatch()
+brush.hatchArray(polygons)                // Hatch across multiple Polygon objects at once
 ```
 
 ### Drawing Primitives
 
+**Lines & curves** (stroke only):
 ```js
 brush.line(x1, y1, x2, y2)
 brush.flowLine(x, y, length, direction)    // Follows active vector field
 brush.spline([[x1,y1], [x2,y2,pressure], ...], curvature)  // 0-1 curvature
-brush.rect(x, y, w, h)                     // Supports stroke + fill + hatch
-brush.rect(x, y, w, h, "center")           // Center mode
-brush.circle(x, y, radius)                 // STROKE ONLY — no fill!
-brush.arc(x, y, radius, startAngle, endAngle)  // STROKE ONLY, radians
-brush.polygon([[x1,y1], [x2,y2], ...])     // Supports stroke + fill + hatch
+brush.arc(x, y, radius, startAngle, endAngle)  // STROKE ONLY, follows angleMode()
 ```
 
-Custom shapes (support stroke + fill + hatch):
+**Shapes** (support stroke + fill + hatch):
+```js
+brush.rect(x, y, w, h)                     // Default: top-left corner mode
+brush.rect(x, y, w, h, "center")           // Center mode
+brush.circle(x, y, radius)                 // Supports stroke + fill + hatch
+brush.circle(x, y, radius, true)           // With hand-drawn irregularity
+brush.polygon([[x1,y1], [x2,y2], ...])     // Not affected by vector fields
+```
+
+**Custom shapes** (support stroke + fill + hatch, affected by fields):
 ```js
 brush.beginShape(0.5)        // curvature 0-1
 brush.vertex(x, y)           // or brush.vertex(x, y, pressure)
@@ -208,7 +231,7 @@ brush.vertex(x2, y2)
 brush.endShape(true)          // true = close shape
 ```
 
-Manual stroke paths:
+**Manual stroke paths:**
 ```js
 brush.beginStroke("curve", x, y)   // or "segments"
 brush.move(angle, length, pressure)
@@ -218,7 +241,7 @@ brush.endStroke(angle, pressure)
 ### Clipping
 
 ```js
-brush.clip([x1, y1, x2, y2])   // Clip strokes/hatches to rectangle
+brush.clip([x1, y1, x2, y2])   // Clip strokes/hatches to rectangle (not fills)
 brush.noClip()
 ```
 
@@ -239,13 +262,15 @@ plot.addSegment(angle, length, pressure);
 plot.endPlot(finalAngle, finalPressure);
 plot.draw(x, y);               // Draw at position
 plot.fill(x, y);               // Fill at position
+plot.hatch(x, y);              // Hatch at position
 ```
 
 **Position (flow field walker):**
 ```js
 let pos = new brush.Position(x, y);
-pos.moveTo(length, direction, stepLength, true);  // true = follow field
+pos.moveTo(direction, length, stepLength);  // Move along flow field
 pos.angle();                   // Get field angle at current position
+pos.reset();                   // Reset plotted distance
 ```
 
 ## RECIPES
@@ -287,33 +312,34 @@ for (let i = 0; i < 200; i++) {
 }
 ```
 
-### Filled circle (polygon approximation)
+### Filled circle with watercolor
 ```js
-// brush.circle() is stroke-only! Use beginShape for filled circles:
+brush.noStroke();
 brush.fill("#e85d75", 120);
 brush.fillBleed(0.4);
-let cx = 400, cy = 400, r = 100;
-brush.beginShape();
-for (let a = 0; a < TWO_PI; a += 0.1) {
-  brush.vertex(cx + cos(a) * r, cy + sin(a) * r);
-}
-brush.endShape(true);
+brush.circle(400, 400, 100);
 ```
 
-### Animated field (requires draw loop)
+### Mixed media grid (from author's examples)
 ```js
-function setup() {
-  createCanvas(800, 800, WEBGL);
-  brush.load();
-}
-function draw() {
-  translate(-width/2, -height/2);
-  background(245, 240, 235);
-  brush.refreshField(frameCount / 10);
-  brush.field("spiral");
-  brush.set("spray", "#336699", 1);
-  for (let i = 0; i < 50; i++) {
-    brush.flowLine(random(width), random(height), random(50, 200), random(TWO_PI));
+let palette = ["#7b4800", "#002185", "#003c32", "#fcd300", "#ff2702", "#6b9404"];
+let cols = 12, rows = 6, border = 300;
+let cw = (width - border) / cols, rh = (height - border) / rows;
+
+brush.field("curved");
+for (let i = 0; i < rows; i++) {
+  for (let j = 0; j < cols; j++) {
+    if (random() < 0.1) {
+      brush.fill(random(palette), random(80, 140));
+      brush.fillBleed(random(0.05, 0.4));
+      brush.fillTexture(0.55, 0.5);
+    } else {
+      brush.set(random(["2H", "HB", "charcoal"]), random(palette));
+      brush.hatchStyle(random(["marker", "marker2"]), random(palette));
+      brush.hatch(random(10, 60), random(0, 180));
+    }
+    brush.rect(border/2 + cw * j, border/2 + rh * i, cw, rh);
+    brush.noStroke(); brush.noFill(); brush.noHatch();
   }
 }
 ```
@@ -327,3 +353,4 @@ function draw() {
 - **Composition**: Use golden ratio, rule of thirds, or radial layouts. Leave breathing room.
 - **Texture stacking**: Combine hatching + watercolor fill + pencil outlines for rich mixed-media effects.
 - **Scale**: `brush.scaleBrushes(2)` for larger canvases (1200+px) so strokes stay visible.
+- **p5 transforms work**: `push()`, `pop()`, `translate()`, `rotate()`, `scale()` — brush state is saved/restored automatically alongside p5's state.
