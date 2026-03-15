@@ -46,7 +46,7 @@ Every generated file follows this structure:
 <script>
 function setup() {
   createCanvas(800, 800, WEBGL);
-  // p5.brush auto-initializes on createCanvas — no brush.load() needed
+  brush.load();
   // Shift WEBGL origin to top-left:
   translate(-width / 2, -height / 2);
 
@@ -66,7 +66,7 @@ function setup() {
 ## CRITICAL RULES
 
 1. **Always use `WEBGL` mode**: `createCanvas(w, h, WEBGL)` — p5.brush v2 requires it
-2. **`brush.load()` is automatic** — the library initializes when `createCanvas()` is called. Only call `brush.load(buffer)` when targeting a `p5.Graphics` or `p5.Framebuffer`
+2. **Always call `brush.load()`** in setup, after `createCanvas(w,h,WEBGL)`. Use `brush.load(buffer)` to target a `p5.Graphics` or `p5.Framebuffer`, and `brush.load()` to switch back
 3. **Shift origin**: `translate(-width/2, -height/2)` right after background to work in top-left coordinates
 4. **Angles follow `angleMode()`** — radians by default (matching p5). `brush.addField()` angles default to degrees unless you pass `{ angleMode: "radians" }`
 5. **`brush.arc()` is stroke-only** — it does NOT fill. `brush.circle()` and `brush.rect()` support stroke + fill + hatch
@@ -82,7 +82,7 @@ function setup() {
 ### Setup & Config
 
 ```js
-// brush.load() is called automatically — only needed for buffer targets:
+brush.load()              // Initialize. Call in setup() after createCanvas(w,h,WEBGL)
 brush.load(buffer)        // Target a p5.Graphics or p5.Framebuffer
 brush.load()              // Switch back to main canvas
 brush.scaleBrushes(scale) // Scale all default brush params (weight, scatter, spacing)
